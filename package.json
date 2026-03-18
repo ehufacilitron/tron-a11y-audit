@@ -1,0 +1,22 @@
+{
+  "name": "tron-a11y-audit",
+  "version": "1.0.0",
+  "description": "WCAG 2.1 AA accessibility audit tool using Playwright and axe-core",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scan": "tsx src/scanner/audit-runner.ts",
+    "report": "tsx src/reports/generate-reports.ts",
+    "audit": "tsx src/scanner/audit-runner.ts && tsx src/reports/generate-reports.ts",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "^4.10.1",
+    "fast-xml-parser": "^4.5.1",
+    "playwright": "^1.49.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

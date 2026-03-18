@@ -1,0 +1,7 @@
+node_modules/
+dist/
+output/raw/
+output/aggregated/
+output/reports/
+*.log
+.DS_Store
