@@ -137,29 +137,78 @@ output/
 
 ### Deduplication
 
-The same violation appearing on 50 different pages becomes **1 violation group** with `count: 50` and a list of all affected pages. This prevents a single site-wide issue (like a missing skip-nav link) from flooding the report with 50 duplicate entries.
+Reports group violations, not individual occurrences. If the same color-contrast violation appears on 50 pages, you get **1 violation group** with `count: 50` and a list of all 50 affected URLs — not 50 separate entries. This keeps reports focused on distinct issues rather than repeating the same problem for every page.
 
-Deduplication key: `ruleId + normalizedSelector`. The normalizer collapses dynamic IDs, `:nth-child(N)` indices, and Vue scoped attributes so equivalent DOM structures group together.
+Two violations are considered "the same" when they share the same axe-core rule ID and a normalized CSS selector. The normalizer collapses things that look different but are structurally identical: dynamic IDs (e.g., `#component-1234` becomes `#component-*`), `:nth-child(N)` indices, and Vue scoped attributes (`[data-v-xxxxx]`). This means a button with `id="btn-7"` on one page and `id="btn-42"` on another will group together as the same violation.
 
 ### Severity Levels
 
-Violations are classified into four severity levels based on axe-core impact and how widespread the issue is:
+axe-core reports a raw **impact** for each violation (critical, serious, moderate, minor). The tool maps this to a project **severity** level that also factors in how widespread the issue is:
 
-| Severity | Meaning | Jira Priority |
-|----------|---------|---------------|
-| **Critical** | Blocks access for some users. Fix immediately. | Highest |
-| **Significant** | Major barrier. High priority fix. | High |
-| **Moderate** | Causes difficulty but has workarounds. | Medium |
-| **Recommendation** | Minor issue or best practice. | Low |
+| axe-core Impact | Default Severity | Jira Priority | Bumped Severity (10+ pages) |
+|-----------------|-----------------|---------------|----------------------------|
+| critical | **Critical** | Highest | Critical (no change) |
+| serious | **Significant** | High | **Critical** (Highest) |
+| moderate | **Moderate** | Medium | **Significant** (High) |
+| minor | **Recommendation** | Low | Recommendation (no change) |
 
-Widespread violations (10+ affected pages) are automatically bumped up one severity level.
+The idea: a "serious" violation that only appears on 1 page is Significant, but the same violation appearing on 10+ pages gets bumped to Critical because the breadth of impact makes it a higher priority to fix. Both the raw impact and the mapped severity appear in all reports so you can see both.
 
 ### Report Formats
 
-- **HTML** (`audit-report.html`): Open in a browser. Sortable table, severity badges, WCAG criteria tags, top selectors. Self-contained with inline CSS.
-- **JSON** (`audit-report.json`): Full enriched data including WCAG criterion details, severity mappings, component tier info. Good for programmatic consumption.
-- **CSV** (`jira-import.csv`): One row per violation group. Columns: Summary, Description, Priority, Labels, Issue Type. Import into Jira via CSV importer.
-- **LLM** (`llm-report.json`): Stripped-down JSON with only key facts. Feed this to an LLM for analysis, prioritization advice, or fix suggestions.
+Four reports are generated, each designed for a different audience or workflow.
+
+#### HTML Report (`audit-report.html`)
+
+Open this in a browser. It's a self-contained file (all CSS and JavaScript inline, no external dependencies) with:
+
+- **Summary cards** at the top showing pages scanned, total violations, unique rules, and a severity breakdown with color-coded badges.
+- **Sortable violations table** — click any column header (Severity, Impact, Rule, Count, Pages) to sort. Each row shows:
+  - **Severity badge** (Critical = red, Significant = orange, Moderate = gold, Recommendation = blue)
+  - **Impact badge** (the raw axe-core impact: critical, serious, moderate, minor)
+  - **Rule ID** with a "Learn more" link to the axe-core documentation for that rule
+  - **Description** of what the rule checks
+  - **WCAG criteria tags** — clickable blue pills showing which WCAG success criteria the violation maps to (e.g., "1.4.3 Contrast (Minimum)"). If a rule doesn't map to a specific criterion, it shows "best-practice".
+  - **Count** — total number of times this violation was found across the site
+  - **Pages** — how many distinct pages are affected
+  - **Top selector** — the CSS selector identifying the offending element. If there are multiple unique selectors for the same rule, you can expand a "N unique selectors" dropdown to see up to 5 of them.
+
+This is the best report for getting a quick visual overview and for sharing with stakeholders who want to see the big picture.
+
+#### JSON Report (`audit-report.json`)
+
+The full enriched dataset as formatted JSON. Contains everything the HTML report shows, plus additional detail:
+
+- **Metadata**: audit date, WCAG level, base URL, pages scanned vs. discovered, scan duration, report generation timestamp.
+- **Violation groups**: each group includes the rule ID, description, help text, axe-core documentation URL, impact level, mapped WCAG criteria (with criterion ID, name, level, and W3C Understanding URL), severity classification with Jira priority mapping, optional component tier info, every individual occurrence (page URL, CSS selector, raw HTML snippet, failure summary, and Vue component info if enabled), total count, and list of all affected page URLs.
+- **Summary**: totals for pages, violations, unique rules, counts broken down by severity, and counts broken down by WCAG criterion.
+
+Use this for programmatic consumption — feeding into dashboards, diffing between audits, or building custom views.
+
+#### CSV Report (`jira-import.csv`)
+
+One row per violation group, formatted for Jira's CSV importer. Five columns:
+
+| Column | Content |
+|--------|---------|
+| **Summary** | `[a11y] {description} ({ruleId})` |
+| **Description** | Jira-formatted text (see below) |
+| **Priority** | Highest, High, Medium, or Low (maps from severity) |
+| **Labels** | `accessibility wcag-aa a11y-{impact} {ruleId}` |
+| **Issue Type** | Bug |
+
+The Description field is rich — it includes impact, severity, WCAG level, WCAG criteria (e.g., "SC 1.4.3 Contrast (Minimum) (Level AA)"), a full description of the rule, occurrence count and page count, up to 5 affected CSS selectors, up to 5 affected page URLs, fix guidance pulled from axe-core's failure summary, and a reference link to the rule documentation. All formatted with Jira wiki markup (`*bold*` labels).
+
+To import: Jira > Projects > Import Issues > CSV. Map the columns to Jira fields. The labels column is space-separated so Jira will create individual labels for filtering.
+
+#### LLM Report (`llm-report.json`)
+
+A condensed JSON format designed to fit efficiently in an LLM's context window. It strips out verbose HTML snippets, long selector lists, and redundant detail, keeping only what an LLM needs to reason about the violations:
+
+- **Top-level**: audit date, base URL, total pages, total violations, unique rules, and a severity breakdown object.
+- **Per violation**: rule ID, impact, severity, WCAG criteria (formatted as "1.1.1 Non-text Content"), description, count, number of affected pages, up to 3 representative CSS selectors, and cleaned fix guidance (axe-core's "Fix any/all of the following:" prefix is stripped, whitespace normalized).
+
+Feed this to an LLM with a prompt like: "Given these WCAG violations, which should we fix first and what's the estimated effort?" or "Generate a sprint plan to address the critical and significant issues."
 
 ## Adding Custom Interaction Triggers
 
@@ -196,6 +245,28 @@ Each trigger:
 - Continues to the next trigger even if one fails
 
 The built-in triggers cover: modal dialogs, dropdown menus, accordions, tabs, tooltips, and mobile navigation toggles. Set `enableDefaultTriggers: false` to disable them.
+
+## Important: This Tool Is Not Enough on Its Own
+
+Automated scanning catches a lot, but it cannot catch everything. axe-core (the engine behind this tool) typically identifies [30–40% of WCAG issues](https://www.deque.com/blog/automated-testing-study-identifies-57-percent-of-digital-accessibility-issues/). The rest require human judgment — things like whether focus order makes sense, whether content is understandable, whether custom interactions work with assistive technology, or whether alt text is actually meaningful (not just present).
+
+**Use this tool as a starting point, not a finish line.** A clean automated report does not mean your site is accessible.
+
+### Recommended Additional Testing
+
+**Browser extensions** — install and use these alongside automated scans:
+
+- **[WAVE](https://wave.webaim.org/extension/)** — WebAIM's browser extension. Gives you a visual overlay of accessibility issues directly on the page. Great for spotting structural problems (heading hierarchy, missing landmarks, empty links) that are easier to understand in context than in a table. Available for Chrome, Firefox, and Edge.
+- **[Stark](https://www.getstark.co/)** — Browser extension with contrast checking, vision simulation (color blindness, low vision, blurred vision), focus order visualization, and more. Particularly useful for evaluating design and color choices that automated tools can flag but can't fully judge.
+
+**Manual testing** — no tool replaces actually using the site the way your users do:
+
+- **Keyboard-only navigation**: Unplug your mouse and tab through the entire page. Can you reach every interactive element? Can you tell where focus is? Can you operate menus, modals, and forms without a pointer? Can you escape back out of everything you open?
+- **Screen reader testing**: Test with at least one screen reader (VoiceOver on macOS, NVDA on Windows). Listen to how the page reads. Do images have meaningful descriptions? Do form fields announce their labels? Do dynamic updates (toasts, loading states, error messages) get announced?
+- **Zoom and reflow**: Zoom to 200% and 400%. Does content reflow into a single column without horizontal scrolling? Does anything get cut off or overlap?
+- **Content review**: Read the page. Are link texts descriptive (not "click here")? Are error messages helpful? Is the reading order logical?
+
+The automated scan gives you a prioritized list of concrete issues to fix. The browser extensions help you see and understand those issues in context. Manual testing catches the things no tool can — and builds the intuition your team needs to write accessible code going forward.
 
 ## Tips
 
