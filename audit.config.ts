@@ -4,7 +4,7 @@ const config: AuditConfig = {
   // ──────────────────────────────────────────────
   // Required — the base URL of the site to audit
   // ──────────────────────────────────────────────
-  baseUrl: 'http://localhost:4001',
+  baseUrl: 'https://www.facilitron.com/',
 
   // ──────────────────────────────────────────────
   // Sitemap discovery
